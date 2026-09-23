@@ -186,6 +186,14 @@ body{background:linear-gradient(135deg,#f2f8ff 0%,#f7fbff 48%,#f2fff8 100%)}
         <label>Senha</label>
         <input id="loginPassword" type="password" required placeholder="Sua senha" autocomplete="current-password">
       </div>
+      <div style="text-align:right;margin:-5px 0 12px">
+  <button
+    type="button"
+    onclick="forgotPassword()"
+    style="background:transparent;color:#155EEF;font-weight:700;padding:4px 0">
+    Esqueci minha senha
+  </button>
+</div>
       <button class="submit">Entrar no Meu Futuro Financeiro</button>
     </form>
 
@@ -426,7 +434,40 @@ body{background:linear-gradient(135deg,#f2f8ff 0%,#f7fbff 48%,#f2fff8 100%)}
     </form>
   </div>
 </div>
+<div class="modal" id="recoveryModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>🔑 Criar nova senha</h2>
+      <button class="close" onclick="closeRecoveryModal()">✕</button>
+    </div>
 
+    <form id="recoveryForm">
+      <div class="form-group">
+        <label>Nova senha</label>
+        <input
+          id="recoveryPassword"
+          type="password"
+          minlength="6"
+          required
+          placeholder="Mínimo de 6 caracteres"
+          autocomplete="new-password">
+      </div>
+
+      <div class="form-group">
+        <label>Confirmar nova senha</label>
+        <input
+          id="recoveryPassword2"
+          type="password"
+          minlength="6"
+          required
+          placeholder="Digite novamente"
+          autocomplete="new-password">
+      </div>
+
+      <button class="submit">Salvar nova senha</button>
+    </form>
+  </div>
+</div>
 <div class="modal" id="modal">
   <div class="modal-box">
     <div class="modal-head"><h2 id="modalTitle">Novo movimento</h2><button class="close" onclick="closeModal()">✕</button></div>
@@ -846,6 +887,41 @@ document.getElementById('registerForm').addEventListener('submit',async function
   if(data.session&&data.user) await enterApp(data.user);
   else {setSessionLoading(false);authMessage('success','Cadastro realizado! Verifique seu e-mail para confirmar a conta e depois entre.');showAuth('login');}
 });
+async function forgotPassword(){
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+
+  if(!email){
+    authMessage('error','Digite seu e-mail no campo acima para redefinir a senha.');
+    document.getElementById('loginEmail').focus();
+    return;
+  }
+
+  setSessionLoading(true,'Enviando link de redefinição...');
+
+  try{
+    const {error} = await sb.auth.resetPasswordForEmail(email,{
+  redirectTo: 'https://meu-futuro-financeiro-gules.vercel.app/'
+});
+
+    if(error) throw error;
+
+    setSessionLoading(false);
+
+    authMessage(
+      'success',
+      'Enviamos um link para '+email+
+      '. Abra seu e-mail e siga as instruções para criar uma nova senha.'
+    );
+
+  }catch(err){
+    setSessionLoading(false);
+
+    authMessage(
+      'error',
+      err?.message || 'Não foi possível enviar o link de redefinição.'
+    );
+  }
+}
 document.getElementById('loginForm').addEventListener('submit',async function(e){
   e.preventDefault();
   const email=document.getElementById('loginEmail').value.trim().toLowerCase(),password=document.getElementById('loginPassword').value;
@@ -866,7 +942,48 @@ document.getElementById('loginForm').addEventListener('submit',async function(e)
       : msg||'E-mail ou senha incorretos.');
   }
 });
+function closeRecoveryModal(){
+  document.getElementById('recoveryModal').classList.remove('open');
+}
 
+document.getElementById('recoveryForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+
+  const p1 = document.getElementById('recoveryPassword').value;
+  const p2 = document.getElementById('recoveryPassword2').value;
+
+  if(p1 !== p2){
+    alert('As senhas não coincidem.');
+    return;
+  }
+
+  if(p1.length < 6){
+    alert('A senha precisa ter pelo menos 6 caracteres.');
+    return;
+  }
+
+  setSessionLoading(true,'Atualizando sua senha...');
+
+  const {error} = await sb.auth.updateUser({
+    password:p1
+  });
+
+  setSessionLoading(false);
+
+  if(error){
+    alert('Não foi possível alterar a senha: '+error.message);
+    return;
+  }
+
+  closeRecoveryModal();
+
+  authMessage(
+    'success',
+    'Senha redefinida com sucesso.'
+  );
+
+  alert('Senha redefinida com sucesso!');
+});
 async function initAuth(){
   if(SUPABASE_URL.startsWith('COLE_')||SUPABASE_KEY.startsWith('COLE_')){
     setSessionLoading(false);
@@ -910,6 +1027,13 @@ async function initAuth(){
   // Depois da inicialização, acompanha mudanças reais de sessão
   // (outra aba, expiração, login/logout etc.).
   sb.auth.onAuthStateChange((event,session)=>{
+    
+    if(event==='PASSWORD_RECOVERY'){
+  setSessionLoading(false);
+  setDisplay('authScreen','none');
+  document.getElementById('recoveryModal').classList.add('open');
+  return;
+}
     if(event==='SIGNED_OUT'){
       clearUserData();
       setDisplay('authScreen','grid');
@@ -1072,5 +1196,6 @@ async function deleteStudy(id){if(!confirm('Excluir este material da biblioteca 
 loadStudyMaterials();
 initAuth();
 </script>
+<script defer src="/_vercel/insights/script.js"></script>
 </body>
 </html>
