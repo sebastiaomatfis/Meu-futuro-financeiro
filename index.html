@@ -400,12 +400,14 @@ body{background:linear-gradient(135deg,#f2f8ff 0%,#f7fbff 48%,#f2fff8 100%)}
 </section>
 
 <section id="estudos" class="page">
-  <div class="card hero-welcome"><h2>Biblioteca de Educação Financeira</h2><div class="small">Um espaço para reunir apostilas, livros e materiais em PDF e estudar no próprio navegador.</div></div>
+  <div class="card hero-welcome"><h2>Biblioteca compartilhada de estudos</h2><div class="small">Os materiais publicados ficam disponíveis para todas as contas. Arquivos enviados por usuários passam pela análise do administrador antes da publicação.</div></div>
   <div class="section card">
-    <div class="section-title"><div><h2>Adicionar material</h2><div class="small">Os PDFs ficam salvos neste navegador por meio do armazenamento local.</div></div></div>
-    <div class="upload-zone"><div style="font-size:36px">📚</div><b>Escolha uma apostila ou livro em PDF</b><div class="small" style="margin:6px 0 12px">Você pode informar um título ou deixar o nome do arquivo.</div><input id="studyTitle" placeholder="Título do material (opcional)" style="margin-bottom:9px"><input id="studyFile" class="file-input" type="file" accept="application/pdf"><button class="submit" type="button" onclick="addStudyMaterial()">Adicionar à biblioteca</button></div>
+    <div class="section-title"><div><h2>Enviar material de estudo</h2><div class="small" id="studyUploadHelp">PDFs enviados por usuários ficam pendentes até a aprovação do administrador.</div></div></div>
+    <div class="upload-zone"><div style="font-size:36px">📚</div><b>Escolha um material em PDF</b><div class="small" style="margin:6px 0 12px">Informe um título claro. Não envie documentos pessoais ou materiais sem autorização.</div><input id="studyTitle" placeholder="Título do material" style="margin-bottom:9px"><input id="studyFile" class="file-input" type="file" accept="application/pdf,.pdf"><button class="submit" type="button" onclick="addStudyMaterial()">Enviar para a biblioteca</button><div id="studyUploadStatus" class="small" style="margin-top:8px"></div></div>
   </div>
-  <div class="section"><div class="section-title"><h2>Meus materiais</h2><span class="small" id="studyCount">0 materiais</span></div><div id="studyLibrary" class="study-grid"></div></div>
+  <div id="studyAdminPanel" class="section card" style="display:none"><div class="section-title"><div><h2>Fila de aprovação</h2><div class="small">Revise o título e o arquivo antes de liberar o acesso público.</div></div><span class="small" id="studyPendingCount">0 pendentes</span></div><div id="studyPendingLibrary" class="study-grid"></div></div>
+  <div class="section"><div class="section-title"><h2>Materiais publicados</h2><span class="small" id="studyCount">0 materiais</span></div><div id="studyLibrary" class="study-grid"></div></div>
+  <div class="small" id="studyLibraryNotice" style="margin-top:12px"></div>
 </section>
 
 <section id="desafios" class="page">
@@ -852,6 +854,7 @@ async function enterApp(user){
 
   try{
     await loadUserDataSafe();
+    await loadStudyMaterials();
     if(currentUser?.id!==user.id || loadingUserId!==user.id) return;
     render();
   }catch(err){
@@ -1185,17 +1188,123 @@ function renderTimeline(){
 }
 window.addEventListener('resize',()=>{clearTimeout(window.__tl);window.__tl=setTimeout(renderTimeline,120)});
 
-/* ===== BIBLIOTECA LOCAL DE PDFs (IndexedDB) ===== */
+/* ===== BIBLIOTECA COMPARTILHADA COM APROVAÇÃO ===== */
+// Segurança: nunca coloque a chave service_role no HTML. A aprovação final
+// também precisa ser protegida pelas políticas SQL/RLS fornecidas no arquivo de instalação.
+const STUDY_ADMIN_EMAIL = 'sebastiao.gomes@prof.ce.gov.br';
+const STUDY_BUCKET = 'study-library';
 let studyMaterialsCache=[];
-function studyDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open('MeuFuturoFinanceiroEstudos',1);r.onupgradeneeded=()=>r.result.createObjectStore('materials',{keyPath:'id',autoIncrement:true});r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)})}
-async function loadStudyMaterials(){try{const db=await studyDB();studyMaterialsCache=await new Promise((res,rej)=>{const r=db.transaction('materials').objectStore('materials').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)});renderStudyLibrary();renderChallenges()}catch(e){console.error(e)}}
-async function addStudyMaterial(){const input=document.getElementById('studyFile'),file=input?.files?.[0];if(!file){alert('Escolha um arquivo PDF.');return}if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){alert('Envie um arquivo em PDF.');return}const title=document.getElementById('studyTitle').value.trim()||file.name.replace(/\.pdf$/i,'');try{const db=await studyDB();await new Promise((res,rej)=>{const r=db.transaction('materials','readwrite').objectStore('materials').add({title,name:file.name,blob:file,addedAt:new Date().toISOString()});r.onsuccess=res;r.onerror=()=>rej(r.error)});document.getElementById('studyTitle').value='';input.value='';await loadStudyMaterials()}catch(e){alert('Não foi possível salvar este PDF. O navegador pode estar sem espaço disponível.')}}
-function renderStudyLibrary(){const el=document.getElementById('studyLibrary');if(!el)return;document.getElementById('studyCount').textContent=`${studyMaterialsCache.length} ${studyMaterialsCache.length===1?'material':'materiais'}`;el.innerHTML=studyMaterialsCache.length?studyMaterialsCache.map(m=>`<div class="study-card"><div class="study-cover">📖</div><b>${escapeHTML(m.title)}</b><div class="small">PDF · adicionado em ${new Date(m.addedAt).toLocaleDateString('pt-BR')}</div><div class="study-actions"><button class="btn-secondary" onclick="openStudy(${m.id})">Abrir</button><button class="btn-danger" onclick="deleteStudy(${m.id})">Excluir</button></div></div>`).join(''):'<div class="empty" style="grid-column:1/-1">Sua biblioteca ainda está vazia. Adicione a primeira apostila acima.</div>'}
-async function openStudy(id){const m=studyMaterialsCache.find(x=>x.id===id);if(!m)return;const u=URL.createObjectURL(m.blob);window.open(u,'_blank');setTimeout(()=>URL.revokeObjectURL(u),60000)}
-async function deleteStudy(id){if(!confirm('Excluir este material da biblioteca deste navegador?'))return;const db=await studyDB();await new Promise((res,rej)=>{const r=db.transaction('materials','readwrite').objectStore('materials').delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error)});await loadStudyMaterials()}
-
+let studyPendingCache=[];
+function isStudyAdmin(){return String(currentUser?.email||'').toLowerCase()===STUDY_ADMIN_EMAIL.toLowerCase()}
+function studyStatus(message,error=false){const el=document.getElementById('studyUploadStatus');if(el){el.textContent=message;el.style.color=error?'#b91c1c':'#52647d'}}
+function safeStudyFileName(name){return String(name||'material.pdf').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]/g,'_').slice(-100)||'material.pdf'}
+async function loadStudyMaterials(){
+ const publicQuery=await sb.from('study_materials').select('id,title,file_name,storage_path,created_at,owner_id,owner_name,status').eq('status','published').order('created_at',{ascending:false});
+ if(publicQuery.error){console.error('Biblioteca compartilhada:',publicQuery.error);studyStatus('A biblioteca compartilhada ainda não está configurada. Execute o SQL fornecido ao final do arquivo.',true);studyMaterialsCache=[];renderStudyLibrary();return}
+ studyMaterialsCache=publicQuery.data||[];
+ studyPendingCache=[];
+ if(isStudyAdmin()){
+   const pendingQuery=await sb.from('study_materials').select('id,title,file_name,storage_path,created_at,owner_id,owner_name,status').eq('status','pending').order('created_at',{ascending:true});
+   if(pendingQuery.error)console.error('Fila da biblioteca:',pendingQuery.error);else studyPendingCache=pendingQuery.data||[];
+ }
+ renderStudyLibrary();renderStudyPending();renderChallenges();
+}
+async function addStudyMaterial(){
+ const input=document.getElementById('studyFile'),file=input?.files?.[0];
+ if(!currentUser){studyStatus('Entre na sua conta para enviar materiais.',true);return}
+ if(!file){studyStatus('Escolha um arquivo PDF.',true);return}
+ if(file.type!=='application/pdf'&&!file.name.toLowerCase().endsWith('.pdf')){studyStatus('Envie um arquivo em PDF.',true);return}
+ if(file.size>20*1024*1024){studyStatus('O PDF deve ter até 20 MB.',true);return}
+ const title=document.getElementById('studyTitle').value.trim()||file.name.replace(/\.pdf$/i,'');
+ if(title.length>140){studyStatus('O título deve ter até 140 caracteres.',true);return}
+ studyStatus('Enviando e registrando o material...');
+ const path=`${currentUser.id}/${crypto.randomUUID()}-${safeStudyFileName(file.name)}`;
+ try{
+  const upload=await sb.storage.from(STUDY_BUCKET).upload(path,file,{contentType:'application/pdf',upsert:false});
+  if(upload.error)throw upload.error;
+  const admin=isStudyAdmin();
+  const ownerName=currentUser.user_metadata?.name||currentUser.email||'Usuário';
+  const insert=await sb.from('study_materials').insert({title,file_name:file.name,storage_path:path,owner_id:currentUser.id,owner_name:ownerName,status:admin?'published':'pending',reviewed_by:admin?currentUser.id:null,reviewed_at:admin?new Date().toISOString():null}).select('id').single();
+  if(insert.error){await sb.storage.from(STUDY_BUCKET).remove([path]);throw insert.error}
+  document.getElementById('studyTitle').value='';input.value='';
+  studyStatus(admin?'Material publicado para todas as contas.':'Material enviado para análise do administrador. Ele aparecerá para todos após aprovação.');
+  await loadStudyMaterials();
+ }catch(e){console.error(e);studyStatus('Não foi possível enviar. Confira a configuração do Supabase e tente novamente.',true)}
+}
+function renderStudyLibrary(){
+ const el=document.getElementById('studyLibrary');if(!el)return;
+ document.getElementById('studyCount').textContent=`${studyMaterialsCache.length} ${studyMaterialsCache.length===1?'material':'materiais'}`;
+ el.innerHTML=studyMaterialsCache.length?studyMaterialsCache.map(m=>`<div class="study-card"><div class="study-cover">📖</div><b>${escapeHTML(m.title)}</b><div class="small">PDF · enviado por ${escapeHTML(m.owner_name||'usuário')} · ${new Date(m.created_at).toLocaleDateString('pt-BR')}</div><div class="study-actions"><button class="btn-secondary" onclick="openStudy('${escapeHTML(m.id)}')">Abrir PDF</button>${isStudyAdmin()?`<button class="btn-danger" onclick="deleteStudy('${escapeHTML(m.id)}')">Excluir</button>`:''}</div></div>`).join(''):'<div class="empty" style="grid-column:1/-1">Ainda não há materiais publicados.</div>';
+ const panel=document.getElementById('studyAdminPanel');if(panel)panel.style.display=isStudyAdmin()?'block':'none';
+ const help=document.getElementById('studyUploadHelp');if(help)help.textContent=isStudyAdmin()?'Como administrador, seus arquivos são publicados para todas as contas assim que o envio termina.':'Seu envio ficará pendente até a aprovação do administrador.';
+}
+function renderStudyPending(){
+ const panel=document.getElementById('studyAdminPanel'),el=document.getElementById('studyPendingLibrary');if(!panel||!el)return;
+ panel.style.display=isStudyAdmin()?'block':'none';
+ document.getElementById('studyPendingCount').textContent=`${studyPendingCache.length} ${studyPendingCache.length===1?'pendente':'pendentes'}`;
+ el.innerHTML=studyPendingCache.length?studyPendingCache.map(m=>`<div class="study-card"><div class="study-cover">🕒</div><b>${escapeHTML(m.title)}</b><div class="small">PDF · enviado por ${escapeHTML(m.owner_name||'usuário')} · ${new Date(m.created_at).toLocaleDateString('pt-BR')}</div><div class="study-actions"><button class="btn-secondary" onclick="openStudy('${escapeHTML(m.id)}')">Revisar PDF</button><button class="submit" onclick="approveStudy('${escapeHTML(m.id)}')">Aprovar</button><button class="btn-danger" onclick="rejectStudy('${escapeHTML(m.id)}')">Recusar</button></div></div>`).join(''):'<div class="empty" style="grid-column:1/-1">Nenhum material aguardando análise.</div>';
+}
+async function openStudy(id){
+ const m=[...studyMaterialsCache,...studyPendingCache].find(x=>String(x.id)===String(id));if(!m)return;
+ if(m.status==='pending'&&!isStudyAdmin()){alert('Este material ainda aguarda aprovação.');return}
+ const {data,error}=await sb.storage.from(STUDY_BUCKET).createSignedUrl(m.storage_path,300);
+ if(error){alert('Não foi possível abrir o PDF.');console.error(error);return}
+ window.open(data.signedUrl,'_blank','noopener');
+}
+async function approveStudy(id){if(!isStudyAdmin()){alert('Apenas o administrador pode aprovar materiais.');return}const {error}=await sb.from('study_materials').update({status:'published',reviewed_by:currentUser.id,reviewed_at:new Date().toISOString()}).eq('id',id).eq('status','pending');if(error){alert('Não foi possível aprovar. Confira as políticas e o SQL de instalação.');console.error(error);return}await loadStudyMaterials()}
+async function rejectStudy(id){if(!isStudyAdmin()){alert('Apenas o administrador pode recusar materiais.');return}const m=studyPendingCache.find(x=>String(x.id)===String(id));if(!m)return;if(!confirm('Recusar e excluir este arquivo enviado?'))return;const del=await sb.from('study_materials').delete().eq('id',id).eq('status','pending');if(del.error){alert('Não foi possível recusar.');console.error(del.error);return}await sb.storage.from(STUDY_BUCKET).remove([m.storage_path]);await loadStudyMaterials()}
+async function deleteStudy(id){if(!isStudyAdmin()){alert('Apenas o administrador pode excluir materiais publicados.');return}const m=studyMaterialsCache.find(x=>String(x.id)===String(id));if(!m||!confirm('Excluir este material para todas as contas?'))return;const del=await sb.from('study_materials').delete().eq('id',id).eq('status','published');if(del.error){alert('Não foi possível excluir.');console.error(del.error);return}await sb.storage.from(STUDY_BUCKET).remove([m.storage_path]);await loadStudyMaterials()}
 loadStudyMaterials();
 initAuth();
+
+/*
+INSTALAÇÃO DA BIBLIOTECA COMPARTILHADA (executar uma vez no SQL Editor do Supabase):
+
+create table if not exists public.study_materials (
+ id uuid primary key default gen_random_uuid(), title text not null check (char_length(title) between 1 and 140),
+ file_name text not null, storage_path text not null unique, owner_id uuid not null references auth.users(id) on delete cascade,
+ owner_name text not null, status text not null default 'pending' check (status in ('pending','published')),
+ reviewed_by uuid references auth.users(id), reviewed_at timestamptz, created_at timestamptz not null default now()
+);
+alter table public.study_materials enable row level security;
+grant select, insert, update, delete on public.study_materials to authenticated;
+
+drop policy if exists "read published or own submissions" on public.study_materials;
+drop policy if exists "submit pending materials" on public.study_materials;
+drop policy if exists "admin publish or remove submissions" on public.study_materials;
+drop policy if exists "admin delete material rows" on public.study_materials;
+create policy "read published own or admin queue" on public.study_materials for select to authenticated
+ using (status='published' or owner_id=auth.uid() or lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br');
+create policy "submit pending or admin published materials" on public.study_materials for insert to authenticated
+ with check (
+   (owner_id=auth.uid() and status='pending' and reviewed_by is null and reviewed_at is null)
+   or (lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br' and owner_id=auth.uid() and status='published' and reviewed_by=auth.uid() and reviewed_at is not null)
+ );
+create policy "admin review materials" on public.study_materials for update to authenticated
+ using (lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br')
+ with check (lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br' and reviewed_by=auth.uid() and reviewed_at is not null);
+create policy "admin delete material rows" on public.study_materials for delete to authenticated
+ using (lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br');
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+ values ('study-library','study-library',false,20971520,array['application/pdf'])
+ on conflict(id) do update set public=false,file_size_limit=20971520,allowed_mime_types=array['application/pdf'];
+drop policy if exists "study upload own folder" on storage.objects;
+drop policy if exists "study read published or own pending" on storage.objects;
+drop policy if exists "study admin deletes files" on storage.objects;
+create policy "study upload own folder" on storage.objects for insert to authenticated
+ with check (bucket_id='study-library' and (storage.foldername(name))[1]=auth.uid()::text);
+create policy "study read published own or admin review" on storage.objects for select to authenticated
+ using (bucket_id='study-library' and (
+   (storage.foldername(name))[1]=auth.uid()::text
+   or lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br'
+   or exists(select 1 from public.study_materials m where m.storage_path=name and m.status='published')
+ ));
+create policy "study admin deletes files" on storage.objects for delete to authenticated
+ using (bucket_id='study-library' and lower(auth.jwt()->>'email')='sebastiao.gomes@prof.ce.gov.br');
+
+As políticas usam o e-mail de administrador configurado no HTML. A chave service_role nunca deve ser colocada no HTML. A biblioteca usa bucket privado e links temporários para leitura.
+*/
 </script>
 <script defer src="/_vercel/insights/script.js"></script>
 </body>
