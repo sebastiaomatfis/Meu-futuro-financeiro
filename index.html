@@ -158,6 +158,32 @@ body{background:linear-gradient(135deg,#f2f8ff 0%,#f7fbff 48%,#f2fff8 100%)}
 .auth-box{box-shadow:0 25px 70px rgba(112, 0, 0, 0.32)}
 #authScreen,#sessionLoading{background:linear-gradient(135deg,#030577,#a2a50b 58%,#051391)}
 .challenge{background:linear-gradient(90deg,#ffffff,#f5faff);border-color:#d7e5f5}
+/* Interações leves: destacar controles e cartões sob o mouse e no teclado. */
+@media (hover:hover) and (pointer:fine){
+  .nav button,.auth-tab,.card,.challenge,.tag,.tag-choice,.study-card,.ai-prompt,
+  .action,.submit,.btn-secondary,.btn-danger,.btn-reserve,.logout-btn,.delete-btn,
+  .close,.ai-input-row button,.reserve-icon,.icon{
+    transition:transform .18s ease,background-color .18s ease,color .18s ease,
+      border-color .18s ease,box-shadow .18s ease,filter .18s ease;
+  }
+  .nav button:hover{transform:translateX(3px);filter:brightness(1.12)}
+  .nav button:hover .nav-ico{transform:scale(1.08)}
+  .card:hover,.challenge:hover,.study-card:hover{transform:translateY(-3px);box-shadow:0 16px 34px rgba(30,64,175,.16);border-color:#a9c9f6}
+  .tag:hover,.tag-choice:hover,.ai-prompt:hover{transform:translateY(-2px);background:#eaf4ff;box-shadow:0 6px 14px rgba(21,94,239,.12)}
+  .action:hover,.submit:hover,.btn-secondary:hover,.btn-danger:hover,.btn-reserve:hover,
+  .logout-btn:hover,.delete-btn:hover,.close:hover,.ai-input-row button:hover{transform:translateY(-2px);filter:brightness(1.06);box-shadow:0 9px 20px rgba(21,94,239,.18)}
+  .icon:hover,.reserve-icon:hover{transform:scale(1.07) rotate(-3deg)}
+  .auth-tab:hover{background:#fff;color:#155eef;transform:translateY(-1px)}
+}
+.nav button:focus-visible,.auth-tab:focus-visible,.tag-choice:focus-visible,
+.ai-prompt:focus-visible,.action:focus-visible,.submit:focus-visible,
+.btn-secondary:focus-visible,.btn-danger:focus-visible,.btn-reserve:focus-visible,
+.logout-btn:focus-visible,.delete-btn:focus-visible,.close:focus-visible{
+  outline:3px solid #55e6c1;outline-offset:2px;
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}
 </style>
 </head>
 <body>
