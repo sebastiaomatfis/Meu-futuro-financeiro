@@ -996,6 +996,27 @@ async function initAuth(){
     return;
   }
 
+  // Registra o listener antes de qualquer consulta assíncrona. O Supabase pode
+  // emitir PASSWORD_RECOVERY durante a leitura da sessão do link do e-mail.
+  sb.auth.onAuthStateChange((event,session)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      setSessionLoading(false);
+      setDisplay('authScreen','none');
+      document.getElementById('recoveryModal').classList.add('open');
+      return;
+    }
+    if(event==='SIGNED_OUT'){
+      clearUserData();
+      setDisplay('authScreen','grid');
+      showAuth('login');
+      setSessionLoading(false);
+      return;
+    }
+    if(event==='SIGNED_IN' && session?.user && session.user.id!==currentUser?.id){
+      setTimeout(()=>enterApp(session.user),0);
+    }
+  });
+
   // Primeiro descobrimos a sessão atual. Não chamamos getSession() dentro
   // do onAuthStateChange, pois isso pode deixar o app preso no carregamento.
   let sessionResult;
@@ -1028,28 +1049,8 @@ async function initAuth(){
     showAuth('login');
   }
 
-  // Depois da inicialização, acompanha mudanças reais de sessão
-  // (outra aba, expiração, login/logout etc.).
-  sb.auth.onAuthStateChange((event,session)=>{
-    
-    if(event==='PASSWORD_RECOVERY'){
-  setSessionLoading(false);
-  setDisplay('authScreen','none');
-  document.getElementById('recoveryModal').classList.add('open');
-  return;
-}
-    if(event==='SIGNED_OUT'){
-      clearUserData();
-      setDisplay('authScreen','grid');
-      showAuth('login');
-      setSessionLoading(false);
-      return;
-    }
-    if(event==='SIGNED_IN' && session?.user && session.user.id!==currentUser?.id){
-      // Não aguardamos a promise dentro do callback do Supabase.
-      setTimeout(()=>enterApp(session.user),0);
-    }
-  });
+  // O listener de mudanças de sessão já está ativo antes da leitura da sessão,
+  // inclusive para links de recuperação abertos diretamente do e-mail.
 }
 document.addEventListener('keydown',function(e){
   if(e.key==='Enter' && document.activeElement && document.activeElement.id==='aiQuestion'){
